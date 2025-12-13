@@ -52,9 +52,20 @@ class FileStorageMixin:
             )
         else:
             freq_l = self.provider_uri.keys()
-        freq_l = [Freq(freq) for freq in freq_l]
-        setattr(self, _v, freq_l)
-        return freq_l
+
+        # NOTE: provider_uri may contain non-freq keys like `__DEFAULT_FREQ`.
+        # Filter them out (and skip unparseable items) to avoid `Freq('__DEFAULT_FREQ')` errors.
+        parsed: List[Freq] = []
+        for freq in freq_l:
+            if freq == C.DEFAULT_FREQ or str(freq).endswith("_future"):
+                continue
+            try:
+                parsed.append(Freq(freq))
+            except ValueError:
+                logger.warning(f"Ignore invalid freq key in provider_uri: {freq}")
+
+        setattr(self, _v, parsed)
+        return parsed
 
     @property
     def uri(self) -> Path:

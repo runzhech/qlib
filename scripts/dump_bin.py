@@ -115,7 +115,13 @@ class DumpDataBase:
         self._include_fields = tuple(filter(lambda x: len(x) > 0, map(str.strip, include_fields)))
         self.file_suffix = file_suffix
         self.symbol_field_name = symbol_field_name
-        self.df_files = sorted(data_path.glob(f"*{self.file_suffix}") if data_path.is_dir() else [data_path])
+        if data_path.is_dir():
+            self.df_files = sorted(data_path.glob(f"*{self.file_suffix}"))
+            # fallback to recursive search (e.g. each symbol in a subdirectory)
+            if not self.df_files:
+                self.df_files = sorted(data_path.rglob(f"*{self.file_suffix}"))
+        else:
+            self.df_files = [data_path]
         if limit_nums is not None:
             self.df_files = self.df_files[: int(limit_nums)]
         self.qlib_dir = Path(qlib_dir).expanduser()
@@ -168,6 +174,9 @@ class DumpDataBase:
 
     def _get_source_data(self, file_path: Path) -> pd.DataFrame:
         df = read_as_df(file_path, low_memory=False)
+        # parquet may store datetime as index; normalize it into a column for downstream logic
+        if self.date_field_name not in df.columns and getattr(df.index, "name", None) == self.date_field_name:
+            df = df.reset_index()
         if self.date_field_name in df.columns:
             df[self.date_field_name] = pd.to_datetime(df[self.date_field_name])
         # df.drop_duplicates([self.date_field_name], inplace=True)
@@ -466,6 +475,8 @@ class DumpDataUpdate(DumpDataBase):
 
         def _read_df(file_path: Path):
             _df = read_as_df(file_path)
+            if self.date_field_name not in _df.columns and getattr(_df.index, "name", None) == self.date_field_name:
+                _df = _df.reset_index()
             if self.date_field_name in _df.columns and not np.issubdtype(
                 _df[self.date_field_name].dtype, np.datetime64
             ):

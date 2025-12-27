@@ -44,6 +44,20 @@ class XGBModel(Model, FeatureInt):
         else:
             raise ValueError("XGBoost doesn't support multi-label training")
 
+        x_train_values = np.asarray(x_train.values, dtype=np.float32)
+        x_valid_values = np.asarray(x_valid.values, dtype=np.float32)
+        x_train_values[~np.isfinite(x_train_values)] = np.nan
+        x_valid_values[~np.isfinite(x_valid_values)] = np.nan
+
+        train_mask = np.isfinite(y_train_1d)
+        valid_mask = np.isfinite(y_valid_1d)
+        if not train_mask.all():
+            x_train_values = x_train_values[train_mask]
+            y_train_1d = y_train_1d[train_mask]
+        if not valid_mask.all():
+            x_valid_values = x_valid_values[valid_mask]
+            y_valid_1d = y_valid_1d[valid_mask]
+
         if reweighter is None:
             w_train = None
             w_valid = None
@@ -53,8 +67,13 @@ class XGBModel(Model, FeatureInt):
         else:
             raise ValueError("Unsupported reweighter type.")
 
-        dtrain = xgb.DMatrix(x_train.values, label=y_train_1d, weight=w_train)
-        dvalid = xgb.DMatrix(x_valid.values, label=y_valid_1d, weight=w_valid)
+        if w_train is not None and not train_mask.all():
+            w_train = np.asarray(w_train)[train_mask]
+        if w_valid is not None and not valid_mask.all():
+            w_valid = np.asarray(w_valid)[valid_mask]
+
+        dtrain = xgb.DMatrix(x_train_values, label=y_train_1d, weight=w_train)
+        dvalid = xgb.DMatrix(x_valid_values, label=y_valid_1d, weight=w_valid)
         self.model = xgb.train(
             self._params,
             dtrain=dtrain,
@@ -72,7 +91,9 @@ class XGBModel(Model, FeatureInt):
         if self.model is None:
             raise ValueError("model is not fitted yet!")
         x_test = dataset.prepare(segment, col_set="feature", data_key=DataHandlerLP.DK_I)
-        return pd.Series(self.model.predict(xgb.DMatrix(x_test)), index=x_test.index)
+        x_test_values = np.asarray(x_test.values, dtype=np.float32)
+        x_test_values[~np.isfinite(x_test_values)] = np.nan
+        return pd.Series(self.model.predict(xgb.DMatrix(x_test_values)), index=x_test.index)
 
     def get_feature_importance(self, *args, **kwargs) -> pd.Series:
         """get feature importance

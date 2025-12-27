@@ -246,6 +246,113 @@ class PortfolioMetrics:
             )
 
 
+def plot_return_curve(
+    report: pd.DataFrame,
+    *,
+    with_cost: bool = True,
+    show_rebalance: bool = True,
+    rebalance_col: str = "turnover",
+    rebalance_threshold: float = 0.0,
+    show_turnover: bool = True,
+    title: Optional[str] = None,
+    strategy_label: str = "strategy",
+    benchmark_label: str = "benchmark",
+    save_path: Optional[Union[str, pathlib.Path]] = None,
+    ax: Any = None,
+):
+    """Plot cumulative return curves (strategy vs benchmark) with rebalance visualization.
+
+    Parameters
+    ----------
+    report
+        Portfolio metrics dataframe from Qlib backtest.
+        Index: datetime; Columns typically include: return, bench, cost, turnover.
+    with_cost
+        If True and report has column `cost`, plot strategy return net of cost.
+    show_rebalance
+        If True, mark rebalance points.
+    rebalance_col
+        Column used to infer rebalance intensity. Default: `turnover`.
+    rebalance_threshold
+        Mark a date as rebalance when abs(report[rebalance_col]) > threshold.
+    show_turnover
+        If True and rebalance_col exists, show turnover bars on the secondary axis.
+    save_path
+        If set, save figure to this path.
+
+    Returns
+    -------
+    (fig, ax)
+        Matplotlib figure and main axis.
+    """
+
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as e:  # pragma: no cover
+        raise ImportError("`matplotlib` is required for plotting backtest curves") from e
+
+    if report is None or len(report) == 0:
+        raise ValueError("Empty report; nothing to plot")
+    if "return" not in report.columns:
+        raise ValueError("`report` must contain column `return`")
+    if "bench" not in report.columns:
+        raise ValueError("`report` must contain column `bench` for benchmark curve")
+
+    r = report.copy()
+    r = r.sort_index()
+    r.index = pd.to_datetime(r.index)
+
+    strat_ret = pd.to_numeric(r["return"], errors="coerce").fillna(0.0)
+    if with_cost and "cost" in r.columns:
+        strat_ret = strat_ret - pd.to_numeric(r["cost"], errors="coerce").fillna(0.0)
+
+    bench_ret = pd.to_numeric(r["bench"], errors="coerce").fillna(0.0)
+
+    strat_nv = (1.0 + strat_ret).cumprod()
+    bench_nv = (1.0 + bench_ret).cumprod()
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 5))
+    else:
+        fig = ax.figure
+
+    ax.plot(strat_nv.index, strat_nv.values, label=strategy_label)
+    ax.plot(bench_nv.index, bench_nv.values, label=benchmark_label)
+    ax.set_ylabel("net value")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+    if title is not None:
+        ax.set_title(title)
+
+    rebalance_mask = None
+    if show_rebalance and rebalance_col in r.columns:
+        rb = pd.to_numeric(r[rebalance_col], errors="coerce").fillna(0.0)
+        rebalance_mask = rb.abs() > float(rebalance_threshold)
+        rebalance_dates = rb.index[rebalance_mask]
+        if not show_turnover:
+            for dt in rebalance_dates:
+                ax.axvline(dt, color="gray", alpha=0.15, linewidth=1)
+        else:
+            ax2 = ax.twinx()
+            ax2.bar(rb.index, rb.values, width=1.0, alpha=0.15, color="gray", label=rebalance_col)
+            ax2.set_ylabel(rebalance_col)
+            if rebalance_mask.any():
+                ax.scatter(
+                    rebalance_dates,
+                    strat_nv.loc[rebalance_dates].values,
+                    s=10,
+                    color="black",
+                    alpha=0.35,
+                    label="rebalance",
+                )
+
+    fig.tight_layout()
+    if save_path is not None:
+        pathlib.Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(str(save_path), dpi=150)
+    return fig, ax
+
+
 class Indicator:
     """
     `Indicator` is implemented in a aggregate way.

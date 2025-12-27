@@ -297,7 +297,23 @@ class FileFeatureStorage(FileStorageMixin, FeatureStorage):
     def __init__(self, instrument: str, field: str, freq: str, provider_uri: dict = None, **kwargs):
         super(FileFeatureStorage, self).__init__(instrument, field, freq, **kwargs)
         self._provider_uri = None if provider_uri is None else C.DataPathManager.format_provider_uri(provider_uri)
-        self.file_name = f"{instrument.lower()}/{field.lower()}.{freq.lower()}.bin"
+        freq_str = str(freq).lower()
+        self.file_name = f"{instrument.lower()}/{field.lower()}.{freq_str}.bin"
+
+        # Compatibility: some daily datasets store features as `*.1d.bin` instead of `*.day.bin`.
+        # Try the alternate suffix when the expected file doesn't exist.
+        if freq_str in {"day", "1d"}:
+            try:
+                base = self.dpm.get_data_uri(self.freq)
+                features_root = base.joinpath("features")
+                cur_path = features_root.joinpath(self.file_name)
+                if not cur_path.exists():
+                    alt = "1d" if freq_str == "day" else "day"
+                    alt_name = f"{instrument.lower()}/{field.lower()}.{alt}.bin"
+                    if features_root.joinpath(alt_name).exists():
+                        self.file_name = alt_name
+            except Exception:
+                pass
 
     def clear(self):
         with self.uri.open("wb") as _:

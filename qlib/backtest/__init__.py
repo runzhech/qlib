@@ -23,6 +23,7 @@ from .backtest import INDICATOR_METRIC, PORT_METRIC, backtest_loop, collect_data
 from .decision import Order
 from .exchange import Exchange
 from .utils import CommonInfrastructure
+from .report import plot_return_curve
 
 # make import more user-friendly by adding `from qlib.backtest import STH`
 
@@ -346,4 +347,4 @@ def format_decisions(
     return res
 
 
-__all__ = ["Order", "backtest", "get_strategy_executor"]
+__all__ = ["Order", "backtest", "get_strategy_executor", "plot_return_curve"]
